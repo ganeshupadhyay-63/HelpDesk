@@ -19,6 +19,7 @@ import CustomerRegister from "./pages/Customer/CustomerRegister";
 import CustomerLogin from "./pages/Customer/CustomerLogin";
 import CustomerDashboard from "./pages/Customer/CustomerDashboard";
 import ProtectedCustomer from "./components/customer/ProtectedCustomer";
+import CustomerProfile from "./pages/Customer/CustomerProfile";
 
 // roleselection
 import RoleSelection from "./pages/RoleSelection/RoleSelection";
@@ -48,6 +49,7 @@ function App() {
       <Route path="/" element={<Home />} />
       <Route path="/customer/register" element={<CustomerRegister />} />
       <Route path="/customer/login" element={<CustomerLogin />} />
+      <Route path="/customer/profile" element={<CustomerProfile />} />
 
       {/* Search */}
       <Route path="/search" element={<Search />} />

@@ -12,11 +12,24 @@ import createNotification from "../utils/createNotification.js";
 | CREATE SERVICE REQUEST
 |--------------------------------------------------------------------------
 | POST /api/service-request
-| Public
+| Protected - Customer
 |--------------------------------------------------------------------------
 */
 export const createServiceRequest = async (req, res) => {
   try {
+    const customerId = req.user?.id;
+
+    // --------------------------------------------------
+    // Customer Authentication
+    // --------------------------------------------------
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Customer authentication required",
+      });
+    }
+
     const {
       provider,
       service,
@@ -118,6 +131,13 @@ export const createServiceRequest = async (req, res) => {
       });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid customer ID",
+      });
+    }
+
     // --------------------------------------------------
     // Find Provider
     // --------------------------------------------------
@@ -162,7 +182,6 @@ export const createServiceRequest = async (req, res) => {
     }
 
     const providerLongitude = Number(providerCoordinates[0]);
-
     const providerLatitude = Number(providerCoordinates[1]);
 
     if (
@@ -229,12 +248,11 @@ export const createServiceRequest = async (req, res) => {
     // After 2 km = Rs. 20 per chargeable km
     //
     // Example:
-    //
     // Distance = 5.4 km
-    // Free distance = 2 km
+    // Free = 2 km
     // Chargeable = 3.4 km
     // Charged = 4 km
-    // Travel charge = Rs. 80
+    // Travel Charge = Rs. 80
     //
     // --------------------------------------------------
 
@@ -262,6 +280,11 @@ export const createServiceRequest = async (req, res) => {
     // --------------------------------------------------
 
     const request = await ServiceRequest.create({
+      // IMPORTANT:
+      // Customer comes from authenticated JWT.
+      // Never trust customer ID from frontend.
+      customer: customerId,
+
       provider,
 
       service,
@@ -315,6 +338,7 @@ export const createServiceRequest = async (req, res) => {
     // --------------------------------------------------
 
     const populatedRequest = await ServiceRequest.findById(request._id)
+      .populate("customer", "fullName email phone profileImage location")
       .populate(
         "provider",
         "fullName phone profileImage location rating totalReviews serviceRadius",
@@ -350,6 +374,65 @@ export const createServiceRequest = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| GET CUSTOMER REQUESTS
+|--------------------------------------------------------------------------
+| GET /api/service-request/customer
+| Protected - Customer
+|--------------------------------------------------------------------------
+*/
+export const getCustomerRequests = async (req, res) => {
+  try {
+    const customerId = req.user?.id;
+
+    // --------------------------------------------------
+    // Authentication
+    // --------------------------------------------------
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Customer authentication required",
+      });
+    }
+
+    // --------------------------------------------------
+    // Find Customer Requests
+    // --------------------------------------------------
+
+    const requests = await ServiceRequest.find({
+      customer: customerId,
+    })
+      .populate(
+        "provider",
+        "fullName phone profileImage location rating totalReviews serviceRadius",
+      )
+      .populate("service", "name description basePrice priceUnit images")
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
+
+    // --------------------------------------------------
+    // Response
+    // --------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      count: requests.length,
+      requests,
+    });
+  } catch (error) {
+    console.error("GET CUSTOMER REQUESTS ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch customer requests",
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | GET PROVIDER REQUESTS
 |--------------------------------------------------------------------------
 | GET /api/service-request/provider
@@ -360,6 +443,10 @@ export const getProviderRequests = async (req, res) => {
   try {
     const providerId = req.user?.id;
 
+    // --------------------------------------------------
+    // Authentication
+    // --------------------------------------------------
+
     if (!providerId) {
       return res.status(401).json({
         success: false,
@@ -367,14 +454,23 @@ export const getProviderRequests = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // Find Provider Requests
+    // --------------------------------------------------
+
     const requests = await ServiceRequest.find({
       provider: providerId,
     })
+      .populate("customer", "fullName email phone profileImage location")
       .populate("service", "name description basePrice priceUnit images")
       .sort({
         createdAt: -1,
       })
       .lean();
+
+    // --------------------------------------------------
+    // Response
+    // --------------------------------------------------
 
     return res.status(200).json({
       success: true,
@@ -396,7 +492,7 @@ export const getProviderRequests = async (req, res) => {
 | GET SINGLE REQUEST
 |--------------------------------------------------------------------------
 | GET /api/service-request/:id
-| Public
+| Protected
 |--------------------------------------------------------------------------
 */
 export const getServiceRequestById = async (req, res) => {
@@ -419,6 +515,7 @@ export const getServiceRequestById = async (req, res) => {
     // --------------------------------------------------
 
     const request = await ServiceRequest.findById(id)
+      .populate("customer", "fullName email phone profileImage location")
       .populate(
         "provider",
         "fullName phone profileImage location rating totalReviews serviceRadius",
@@ -507,7 +604,7 @@ export const updateRequestStatus = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // Find Request
+    // Find Request Owned By Provider
     // --------------------------------------------------
 
     const request = await ServiceRequest.findOne({
@@ -584,7 +681,7 @@ export const updateRequestStatus = async (req, res) => {
     await request.save();
 
     // --------------------------------------------------
-    // Create Status Notification
+    // Create Notification
     // --------------------------------------------------
 
     let notificationType = null;
@@ -595,19 +692,19 @@ export const updateRequestStatus = async (req, res) => {
       case "Accepted":
         notificationType = "REQUEST_ACCEPTED";
         notificationTitle = "Request Accepted";
-        notificationMessage = `You accepted the service request from ${request.customerName}.`;
+        notificationMessage = `Your service request has been accepted by the provider.`;
         break;
 
       case "Rejected":
         notificationType = "REQUEST_REJECTED";
         notificationTitle = "Request Rejected";
-        notificationMessage = `You rejected the service request from ${request.customerName}.`;
+        notificationMessage = `Your service request has been rejected by the provider.`;
         break;
 
       case "Completed":
         notificationType = "REQUEST_COMPLETED";
         notificationTitle = "Request Completed";
-        notificationMessage = `You completed the service request from ${request.customerName}.`;
+        notificationMessage = `Your service request has been marked as completed.`;
         break;
 
       default:
@@ -629,6 +726,7 @@ export const updateRequestStatus = async (req, res) => {
     // --------------------------------------------------
 
     const updatedRequest = await ServiceRequest.findById(request._id)
+      .populate("customer", "fullName email phone profileImage location")
       .populate(
         "provider",
         "fullName phone profileImage location rating totalReviews serviceRadius",
@@ -667,12 +765,25 @@ export const updateRequestStatus = async (req, res) => {
 | CANCEL SERVICE REQUEST
 |--------------------------------------------------------------------------
 | PUT /api/service-request/:id/cancel
-| Public
+| Protected - Customer
 |--------------------------------------------------------------------------
 */
 export const cancelServiceRequest = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const customerId = req.user?.id;
+
+    // --------------------------------------------------
+    // Authentication
+    // --------------------------------------------------
+
+    if (!customerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Customer authentication required",
+      });
+    }
 
     // --------------------------------------------------
     // Validate ID
@@ -686,15 +797,18 @@ export const cancelServiceRequest = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // Find Request
+    // Find Own Request
     // --------------------------------------------------
 
-    const request = await ServiceRequest.findById(id);
+    const request = await ServiceRequest.findOne({
+      _id: id,
+      customer: customerId,
+    });
 
     if (!request) {
       return res.status(404).json({
         success: false,
-        message: "Service request not found",
+        message: "Service request not found or unauthorized",
       });
     }
 

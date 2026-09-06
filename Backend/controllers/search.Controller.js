@@ -84,7 +84,20 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 3. Find Nearby Providers
+    // 3. Debug Search Input
+    // --------------------------------------------------
+
+    console.log("SEARCH INPUT:", {
+      lat,
+      lng,
+      category,
+      service,
+      searchDistance,
+      available,
+    });
+
+    // --------------------------------------------------
+    // 4. Find Nearby Providers
     // --------------------------------------------------
 
     const providerQuery = {
@@ -94,6 +107,14 @@ export const searchNearbyProviders = async (req, res) => {
     if (available === "true") {
       providerQuery.isAvailable = true;
     }
+
+    /*
+     IMPORTANT:
+     Do NOT filter provider by category here.
+
+     A provider can have multiple services,
+     and each service has its own category.
+    */
 
     const providers = await Provider.find({
       ...providerQuery,
@@ -114,8 +135,10 @@ export const searchNearbyProviders = async (req, res) => {
       )
       .lean();
 
+    console.log("NEARBY PROVIDERS:", providers.length);
+
     // --------------------------------------------------
-    // 4. No Nearby Providers
+    // 5. No Nearby Providers
     // --------------------------------------------------
 
     if (providers.length === 0) {
@@ -137,7 +160,7 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 5. Keep Providers Inside Their Own Service Radius
+    // 6. Keep Providers Inside Their Own Service Radius
     // --------------------------------------------------
 
     const validProviders = [];
@@ -168,8 +191,7 @@ export const searchNearbyProviders = async (req, res) => {
       /*
        Provider serviceRadius is stored in KM.
 
-       If provider has a valid radius:
-       customer must be inside that radius.
+       Customer must be inside provider's service radius.
       */
 
       if (
@@ -187,7 +209,25 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 6. No Provider Accepts Customer Location
+    // 7. Debug Valid Providers
+    // --------------------------------------------------
+
+    console.log("VALID PROVIDERS:", validProviders.length);
+
+    console.log(
+      "VALID PROVIDER DETAILS:",
+      validProviders.map((provider) => ({
+        id: provider._id,
+        name: provider.fullName,
+        isAvailable: provider.isAvailable,
+        serviceRadius: provider.serviceRadius,
+        distance: provider.distance,
+        coordinates: provider.location?.coordinates?.coordinates,
+      })),
+    );
+
+    // --------------------------------------------------
+    // 8. No Provider Accepts Customer Location
     // --------------------------------------------------
 
     if (validProviders.length === 0) {
@@ -209,13 +249,13 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 7. Get Provider IDs
+    // 9. Get Provider IDs
     // --------------------------------------------------
 
     const providerIds = validProviders.map((provider) => provider._id);
 
     // --------------------------------------------------
-    // 8. Service Query
+    // 10. Service Query
     // --------------------------------------------------
 
     const serviceQuery = {
@@ -228,7 +268,7 @@ export const searchNearbyProviders = async (req, res) => {
     };
 
     // --------------------------------------------------
-    // 9. Category Belongs to SERVICE
+    // 11. Category Belongs to SERVICE
     // --------------------------------------------------
 
     if (category) {
@@ -236,7 +276,7 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 10. Service Name Search
+    // 12. Service Name Search
     // --------------------------------------------------
 
     if (service?.trim()) {
@@ -247,7 +287,7 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 11. Get Actual Provider Services
+    // 13. Get Actual Provider Services
     // --------------------------------------------------
 
     const services = await Service.find(serviceQuery)
@@ -255,7 +295,14 @@ export const searchNearbyProviders = async (req, res) => {
       .lean();
 
     // --------------------------------------------------
-    // 12. Create Final Customer Results
+    // 14. Debug Service Result
+    // --------------------------------------------------
+
+    console.log("SERVICE QUERY:", serviceQuery);
+    console.log("MATCHING SERVICES:", services.length);
+
+    // --------------------------------------------------
+    // 15. Create Final Customer Results
     // --------------------------------------------------
 
     const results = [];
@@ -343,7 +390,7 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 13. Sort Nearest First
+    // 16. Sort Nearest First
     // --------------------------------------------------
 
     results.sort((a, b) => {
@@ -351,7 +398,7 @@ export const searchNearbyProviders = async (req, res) => {
     });
 
     // --------------------------------------------------
-    // 14. Final Response
+    // 17. Final Response
     // --------------------------------------------------
 
     return res.status(200).json({

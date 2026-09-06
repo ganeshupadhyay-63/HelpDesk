@@ -36,3 +36,8 @@ export const cancelServiceRequest = async (id) => {
 
   return response.data;
 };
+
+export const getCustomerRequests = async () => {
+  const response = await api.get("/service-request/customer");
+  return response.data;
+};

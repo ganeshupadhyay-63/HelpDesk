@@ -2,7 +2,16 @@ import mongoose from "mongoose";
 
 const serviceRequestSchema = new mongoose.Schema(
   {
+
     // Customer Information
+
+     customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      required: true,
+      index: true,
+    },
+    
     customerName: {
       type: String,
       required: true,
@@ -109,6 +118,8 @@ const serviceRequestSchema = new mongoose.Schema(
       trim: true,
       maxlength: 500,
     },
+
+    
   },
   {
     timestamps: true,
