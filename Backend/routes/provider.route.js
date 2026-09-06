@@ -7,6 +7,7 @@ import {
   changePassword,
   getProviderDashboard,
   getPublicProviderProfile,
+  getAllProviders,
 } from "../controllers/provider.controller.js";
 
 import authMiddleware from "../middleware/auth.middleware.js";
@@ -37,6 +38,8 @@ router.put("/change-password", authMiddleware, changePassword);
 |--------------------------------------------------------------------------
 */
 
+router.get("/all", getAllProviders);
 router.get("/:providerId", getPublicProviderProfile);
+
 
 export default router;

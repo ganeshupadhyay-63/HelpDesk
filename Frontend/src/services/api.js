@@ -10,7 +10,11 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("providerToken");
+    const isCustomerRoute = config.url?.startsWith("/customer");
+
+    const token = isCustomerRoute
+      ? localStorage.getItem("customerToken")
+      : localStorage.getItem("providerToken");
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

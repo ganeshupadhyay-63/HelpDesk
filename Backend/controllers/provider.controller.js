@@ -808,3 +808,30 @@ export const getPublicProviderProfile = async (req, res) => {
     });
   }
 };
+
+export const getAllProviders = async (req, res) => {
+  try {
+    const providers = await Provider.find({
+      isActive: true,
+    })
+      .select(
+        "fullName email phone profileImage category serviceName description experience location serviceRadius basePrice priceUnit isAvailable isVerified rating totalReviews",
+      )
+      .populate("category", "name slug description icon image")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: providers.length,
+      providers,
+    });
+  } catch (error) {
+    console.error("Get All Providers Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch providers",
+    });
+  }
+};

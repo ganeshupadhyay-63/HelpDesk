@@ -15,7 +15,7 @@ const router = express.Router();
 router.post("/", createCategory);
 
 // Get all
-router.get("/", getAllCategories);
+router.get("/all", getAllCategories);
 
 // Get active
 router.get("/active", getActiveCategories);

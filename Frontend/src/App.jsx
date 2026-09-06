@@ -15,6 +15,14 @@ import RequestStatus from "./pages/Request/RequestStatus";
 // Provider Details
 import ProviderDetails from "./components/customer/ProviderDetails";
 
+import CustomerRegister from "./pages/Customer/CustomerRegister";
+import CustomerLogin from "./pages/Customer/CustomerLogin";
+import CustomerDashboard from "./pages/Customer/CustomerDashboard";
+import ProtectedCustomer from "./components/customer/ProtectedCustomer";
+
+// roleselection
+import RoleSelection from "./pages/RoleSelection/RoleSelection";
+
 // ====================
 // Provider Authentication
 // ====================
@@ -38,6 +46,8 @@ function App() {
 
       {/* Home */}
       <Route path="/" element={<Home />} />
+      <Route path="/customer/register" element={<CustomerRegister />} />
+      <Route path="/customer/login" element={<CustomerLogin />} />
 
       {/* Search */}
       <Route path="/search" element={<Search />} />
@@ -55,6 +65,9 @@ function App() {
       {/* =====================================================
           PROVIDER AUTHENTICATION ROUTES
       ====================================================== */}
+
+      {/* role selection */}
+      <Route path="/choose-role" element={<RoleSelection />} />
 
       {/* Provider Login */}
       <Route path="/provider/login" element={<ProviderLogin />} />
@@ -79,6 +92,10 @@ function App() {
 
         {/* Profile */}
         <Route path="/provider/profile" element={<ProviderProfile />} />
+      </Route>
+
+      <Route element={<ProtectedCustomer />}>
+        <Route path="/customer/dashboard" element={<CustomerDashboard />} />
       </Route>
 
       {/* =====================================================

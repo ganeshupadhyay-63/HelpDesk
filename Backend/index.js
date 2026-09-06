@@ -10,6 +10,7 @@ import serviceRoute from "./routes/service.route.js";
 import searchRoute from "./routes/search.route.js";
 import serviceRequestRoute from "./routes/serviceRequest.route.js";
 import notificationRoutes from "./routes/notification.route.js";
+import customerRoutes from "./routes/customer.route.js";
 
 dotenv.config();
 
@@ -34,12 +35,14 @@ app.use(express.urlencoded({ extended: true }));
 // ===============================
 
 app.use("/api/auth", authRoute);
+app.use("/api/customer", customerRoutes);
 app.use("/api/category", categoryRoute);
 app.use("/api/provider", providerRoute);
 app.use("/api/service", serviceRoute);
 app.use("/api/search", searchRoute);
 app.use("/api/service-request", serviceRequestRoute);
 app.use("/api/notification", notificationRoutes);
+
 
 // ===============================
 // Health Check

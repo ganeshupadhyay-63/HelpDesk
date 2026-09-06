@@ -4,17 +4,17 @@ import Service from "../models/service.model.js";
 
 /*
 |--------------------------------------------------------------------------
-| Search Nearby Providers / Services
+| Search Nearby Services
 |--------------------------------------------------------------------------
 | GET /api/search/nearby
 |
-| Query Parameters:
+| Query:
 | latitude
 | longitude
 | category
 | service
-| maxDistance   -> meters
-| available     -> true / false
+| maxDistance -> meters
+| available   -> true / false
 |--------------------------------------------------------------------------
 */
 
@@ -30,7 +30,7 @@ export const searchNearbyProviders = async (req, res) => {
     } = req.query;
 
     // --------------------------------------------------
-    // 1. Validate Latitude & Longitude
+    // 1. Validate Location
     // --------------------------------------------------
 
     if (latitude === undefined || longitude === undefined) {
@@ -42,7 +42,7 @@ export const searchNearbyProviders = async (req, res) => {
 
     const lat = Number(latitude);
     const lng = Number(longitude);
-    const distance = Number(maxDistance);
+    const searchDistance = Number(maxDistance);
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return res.status(400).json({
@@ -65,11 +65,7 @@ export const searchNearbyProviders = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // 2. Validate Maximum Distance
-    // --------------------------------------------------
-
-    if (!Number.isFinite(distance) || distance <= 0) {
+    if (!Number.isFinite(searchDistance) || searchDistance <= 0) {
       return res.status(400).json({
         success: false,
         message: "maxDistance must be a positive number",
@@ -77,46 +73,27 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 3. Provider Query
+    // 2. Validate Category
+    // --------------------------------------------------
+
+    if (category && !mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid category ID",
+      });
+    }
+
+    // --------------------------------------------------
+    // 3. Find Nearby Providers
     // --------------------------------------------------
 
     const providerQuery = {
       isActive: true,
     };
 
-    // Only available providers
     if (available === "true") {
       providerQuery.isAvailable = true;
     }
-
-    // --------------------------------------------------
-    // 4. Category Filter
-    // --------------------------------------------------
-
-    if (category) {
-      if (!mongoose.Types.ObjectId.isValid(category)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid category ID",
-        });
-      }
-
-      providerQuery.category = category;
-    }
-
-    // --------------------------------------------------
-    // 5. Nearby Provider Search
-    // --------------------------------------------------
-    //
-    // GeoJSON coordinates:
-    //
-    // [longitude, latitude]
-    //
-    // Example:
-    // [80.5931, 28.9639]
-    //
-    // $maxDistance is in meters.
-    // --------------------------------------------------
 
     const providers = await Provider.find({
       ...providerQuery,
@@ -127,7 +104,7 @@ export const searchNearbyProviders = async (req, res) => {
             type: "Point",
             coordinates: [lng, lat],
           },
-          $maxDistance: distance,
+          $maxDistance: searchDistance,
         },
       },
     })
@@ -138,13 +115,10 @@ export const searchNearbyProviders = async (req, res) => {
       .lean();
 
     // --------------------------------------------------
-    // 6. Get Provider IDs
+    // 4. No Nearby Providers
     // --------------------------------------------------
 
-    const providerIds = providers.map((provider) => provider._id);
-
-    // If no providers found
-    if (providerIds.length === 0) {
+    if (providers.length === 0) {
       return res.status(200).json({
         success: true,
         count: 0,
@@ -152,7 +126,7 @@ export const searchNearbyProviders = async (req, res) => {
         search: {
           latitude: lat,
           longitude: lng,
-          maxDistance: distance,
+          maxDistance: searchDistance,
           category: category || null,
           service: service?.trim() || null,
           availableOnly: available === "true",
@@ -163,7 +137,85 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 7. Service Query
+    // 5. Keep Providers Inside Their Own Service Radius
+    // --------------------------------------------------
+
+    const validProviders = [];
+
+    for (const provider of providers) {
+      const coordinates = provider?.location?.coordinates?.coordinates;
+
+      if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+        continue;
+      }
+
+      const providerLng = Number(coordinates[0]);
+      const providerLat = Number(coordinates[1]);
+
+      if (!Number.isFinite(providerLng) || !Number.isFinite(providerLat)) {
+        continue;
+      }
+
+      const distanceInKm = calculateDistance(
+        lat,
+        lng,
+        providerLat,
+        providerLng,
+      );
+
+      const providerRadius = Number(provider.serviceRadius);
+
+      /*
+       Provider serviceRadius is stored in KM.
+
+       If provider has a valid radius:
+       customer must be inside that radius.
+      */
+
+      if (
+        Number.isFinite(providerRadius) &&
+        providerRadius > 0 &&
+        distanceInKm > providerRadius
+      ) {
+        continue;
+      }
+
+      validProviders.push({
+        ...provider,
+        distance: distanceInKm,
+      });
+    }
+
+    // --------------------------------------------------
+    // 6. No Provider Accepts Customer Location
+    // --------------------------------------------------
+
+    if (validProviders.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+
+        search: {
+          latitude: lat,
+          longitude: lng,
+          maxDistance: searchDistance,
+          category: category || null,
+          service: service?.trim() || null,
+          availableOnly: available === "true",
+        },
+
+        services: [],
+      });
+    }
+
+    // --------------------------------------------------
+    // 7. Get Provider IDs
+    // --------------------------------------------------
+
+    const providerIds = validProviders.map((provider) => provider._id);
+
+    // --------------------------------------------------
+    // 8. Service Query
     // --------------------------------------------------
 
     const serviceQuery = {
@@ -176,7 +228,15 @@ export const searchNearbyProviders = async (req, res) => {
     };
 
     // --------------------------------------------------
-    // 8. Service Name Filter
+    // 9. Category Belongs to SERVICE
+    // --------------------------------------------------
+
+    if (category) {
+      serviceQuery.category = category;
+    }
+
+    // --------------------------------------------------
+    // 10. Service Name Search
     // --------------------------------------------------
 
     if (service?.trim()) {
@@ -187,7 +247,7 @@ export const searchNearbyProviders = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // 9. Find Services
+    // 11. Get Actual Provider Services
     // --------------------------------------------------
 
     const services = await Service.find(serviceQuery)
@@ -195,196 +255,103 @@ export const searchNearbyProviders = async (req, res) => {
       .lean();
 
     // --------------------------------------------------
-    // 10. Build Final Results
+    // 12. Create Final Customer Results
     // --------------------------------------------------
 
     const results = [];
 
-    for (const provider of providers) {
-      // --------------------------------------------------
-      // Get Provider Services
-      // --------------------------------------------------
-
-      const providerServices = services.filter(
-        (item) => item.provider?.toString() === provider._id.toString(),
+    for (const serviceItem of services) {
+      const provider = validProviders.find(
+        (item) => item._id.toString() === serviceItem.provider.toString(),
       );
 
-      // --------------------------------------------------
-      // If service filter exists but provider has
-      // no matching service -> skip provider
-      // --------------------------------------------------
-
-      if (service?.trim() && providerServices.length === 0) {
+      if (!provider) {
         continue;
       }
 
-      // --------------------------------------------------
-      // 11. Get Provider Coordinates
-      // --------------------------------------------------
-      //
-      // Correct structure:
-      //
-      // provider.location.coordinates.coordinates
-      //
-      // Example:
-      //
-      // {
-      //   type: "Point",
-      //   coordinates: [80.5931, 28.9639]
-      // }
-      //
-      // --------------------------------------------------
+      results.push({
+        // --------------------------------------------------
+        // Service
+        // --------------------------------------------------
 
-      let distanceInKm = null;
+        _id: serviceItem._id,
 
-      const providerCoordinates = provider?.location?.coordinates?.coordinates;
+        name: serviceItem.name,
 
-      if (
-        Array.isArray(providerCoordinates) &&
-        providerCoordinates.length === 2
-      ) {
-        // GeoJSON order
-        const providerLng = Number(providerCoordinates[0]);
+        serviceName: serviceItem.name,
 
-        const providerLat = Number(providerCoordinates[1]);
+        description: serviceItem.description || provider.description || "",
 
-        if (Number.isFinite(providerLng) && Number.isFinite(providerLat)) {
-          // --------------------------------------------------
-          // Calculate distance
-          // --------------------------------------------------
+        category: serviceItem.category || provider.category || null,
 
-          distanceInKm = calculateDistance(lat, lng, providerLat, providerLng);
-        }
-      }
+        basePrice: serviceItem.basePrice ?? provider.basePrice ?? null,
 
-      // --------------------------------------------------
-      // 12. Provider Service Radius
-      // --------------------------------------------------
-      //
-      // serviceRadius is stored in KM.
-      //
-      // Example:
-      // serviceRadius = 10
-      //
-      // Provider accepts customers within 10 KM.
-      //
-      // If distance is greater than provider's radius,
-      // provider will not be returned.
-      // --------------------------------------------------
+        priceUnit: serviceItem.priceUnit || provider.priceUnit || "service",
 
-      const providerRadius = Number(provider.serviceRadius);
+        images: Array.isArray(serviceItem.images) ? serviceItem.images : [],
 
-      if (
-        distanceInKm !== null &&
-        Number.isFinite(providerRadius) &&
-        providerRadius > 0 &&
-        distanceInKm > providerRadius
-      ) {
-        continue;
-      }
+        isAvailable: serviceItem.isAvailable === true,
 
-      // --------------------------------------------------
-      // 13. Create One Result Per Service
-      // --------------------------------------------------
+        // --------------------------------------------------
+        // Provider
+        // --------------------------------------------------
 
-      providerServices.forEach((serviceItem) => {
-        results.push({
-          // --------------------------------------------------
-          // Service ID
-          // --------------------------------------------------
+        providerId: provider._id,
 
-          _id: serviceItem._id,
+        provider: {
+          _id: provider._id,
 
-          // --------------------------------------------------
-          // Provider ID
-          // --------------------------------------------------
+          fullName: provider.fullName,
 
-          providerId: provider._id,
+          phone: provider.phone,
 
-          // --------------------------------------------------
-          // Provider Information
-          // --------------------------------------------------
+          email: provider.email,
 
-          provider: {
-            _id: provider._id,
+          profileImage: provider.profileImage,
 
-            fullName: provider.fullName,
+          category: provider.category,
 
-            phone: provider.phone,
+          serviceName: provider.serviceName,
 
-            email: provider.email,
+          description: provider.description,
 
-            profileImage: provider.profileImage,
+          experience: provider.experience,
 
-            category: provider.category,
+          location: provider.location,
 
-            serviceName: provider.serviceName,
+          serviceRadius: provider.serviceRadius,
 
-            description: provider.description,
+          basePrice: provider.basePrice,
 
-            experience: provider.experience,
+          priceUnit: provider.priceUnit,
 
-            // Complete location
-            location: provider.location,
+          isAvailable: provider.isAvailable,
 
-            serviceRadius: provider.serviceRadius,
+          isVerified: provider.isVerified,
 
-            basePrice: provider.basePrice,
+          rating: provider.rating || 0,
 
-            priceUnit: provider.priceUnit,
+          totalReviews: provider.totalReviews || 0,
+        },
 
-            isAvailable: provider.isAvailable,
+        // --------------------------------------------------
+        // Distance
+        // --------------------------------------------------
 
-            isVerified: provider.isVerified,
-
-            rating: provider.rating || 0,
-
-            totalReviews: provider.totalReviews || 0,
-          },
-
-          // --------------------------------------------------
-          // Service Information
-          // --------------------------------------------------
-
-          name: serviceItem.name,
-
-          serviceName: serviceItem.name,
-
-          description: serviceItem.description || provider.description || "",
-
-          category: serviceItem.category || provider.category,
-
-          basePrice: serviceItem.basePrice ?? provider.basePrice,
-
-          priceUnit: serviceItem.priceUnit || provider.priceUnit || "service",
-
-          images: Array.isArray(serviceItem.images) ? serviceItem.images : [],
-
-          isAvailable: serviceItem.isAvailable,
-
-          // --------------------------------------------------
-          // Distance
-          // --------------------------------------------------
-
-          distance: distanceInKm,
-        });
+        distance: provider.distance,
       });
     }
 
     // --------------------------------------------------
-    // 14. Sort Results By Distance
+    // 13. Sort Nearest First
     // --------------------------------------------------
 
     results.sort((a, b) => {
-      const distanceA = a.distance ?? Infinity;
-
-      const distanceB = b.distance ?? Infinity;
-
-      return distanceA - distanceB;
+      return (a.distance ?? Infinity) - (b.distance ?? Infinity);
     });
 
     // --------------------------------------------------
-    // 15. Final Response
+    // 14. Final Response
     // --------------------------------------------------
 
     return res.status(200).json({
@@ -394,26 +361,17 @@ export const searchNearbyProviders = async (req, res) => {
 
       search: {
         latitude: lat,
-
         longitude: lng,
-
-        maxDistance: distance,
-
+        maxDistance: searchDistance,
         category: category || null,
-
         service: service?.trim() || null,
-
         availableOnly: available === "true",
       },
 
       services: results,
     });
   } catch (error) {
-    console.error("Search Nearby Providers Error:", error);
-
-    // --------------------------------------------------
-    // MongoDB Geospatial Error
-    // --------------------------------------------------
+    console.error("Search Nearby Services Error:", error);
 
     if (error?.code === 2 || error?.message?.includes("2dsphere")) {
       return res.status(500).json({
@@ -423,13 +381,9 @@ export const searchNearbyProviders = async (req, res) => {
       });
     }
 
-    // --------------------------------------------------
-    // General Error
-    // --------------------------------------------------
-
     return res.status(500).json({
       success: false,
-      message: "Failed to search nearby service providers",
+      message: "Failed to search nearby services",
     });
   }
 };

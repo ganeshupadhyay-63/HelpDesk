@@ -1,19 +1,19 @@
 import jwt from "jsonwebtoken";
 
-const generateToken = (providerId) => {
+const generateToken = (userId, role = "PROVIDER") => {
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET is not configured");
   }
 
   return jwt.sign(
     {
-      id: providerId,
-      role: "PROVIDER",
+      id: userId,
+      role,
     },
     process.env.JWT_SECRET,
     {
       expiresIn: "7d",
-    }
+    },
   );
 };
 
